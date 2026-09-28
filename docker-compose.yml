@@ -1,0 +1,134 @@
+name: payment-notification-sim
+
+# Shared settings for the Node services (all built from the same Dockerfile).
+x-node-service: &node-service
+  build: .
+  init: true
+  restart: unless-stopped
+  environment: &node-env
+    KAFKA_BROKERS: kafka:9092
+    REDIS_URL: redis://redis:6379
+    NOTIFICATION_TOPIC: payment-notifications
+    CONSUMER_GROUP: notification-workers
+    PRODUCER_URL: http://producer:4100
+    MERCHANT_URL: http://merchant-mock:4000
+    KAFKAJS_NO_PARTITIONER_WARNING: "1"
+
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    restart: unless-stopped
+    environment:
+      # Single-node KRaft cluster (no ZooKeeper).
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 15s
+      retries: 30
+      start_period: 10s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  merchant-mock:
+    <<: *node-service
+    command: ["node", "src/merchant-mock/index.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  producer:
+    <<: *node-service
+    command: ["node", "src/producer/index.js"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4100/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  consumer:
+    <<: *node-service
+    command: ["node", "src/consumer/index.js"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      merchant-mock:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4200/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  health-checker:
+    <<: *node-service
+    command: ["node", "src/health-checker/index.js"]
+    environment:
+      <<: *node-env
+      HEALTH_CHECKER_ID: checker-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      merchant-mock:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4300/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  dashboard:
+    <<: *node-service
+    command: ["node", "src/dashboard/index.js"]
+    ports:
+      # Bound to localhost only; change DASHBOARD_HOST_PORT if 8090 is taken.
+      - "127.0.0.1:${DASHBOARD_HOST_PORT:-8090}:8090"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      producer:
+        condition: service_healthy
+      merchant-mock:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

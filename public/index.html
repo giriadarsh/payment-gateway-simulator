@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notification Simulator</title>
+    <meta name="description" content="Live simulation of a payment gateway notification service built on Kafka and Redis." />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Payment notification simulator</h1>
+        <p class="subtitle">One Kafka partition per client · payloads, client status and health checks in Redis</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="conn" class="conn" data-state="connecting"><span class="dot"></span><span id="conn-label">Connecting…</span></span>
+        <button id="theme-toggle" class="btn" type="button">Dark theme</button>
+        <button id="reset" class="btn" type="button">Reset simulation</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel" aria-labelledby="scenarios-title">
+          <h2 id="scenarios-title">Scenarios</h2>
+          <div id="scenario-list" class="scenario-list" role="radiogroup" aria-labelledby="scenarios-title"></div>
+          <form id="scenario-form" class="scenario-form">
+            <div id="scenario-params" class="params"></div>
+            <div class="run-row">
+              <button id="run" class="btn primary" type="submit">Run scenario</button>
+              <button id="cancel" class="btn" type="button" hidden>Cancel</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="controls-title">
+          <h2 id="controls-title">Manual controls</h2>
+          <p class="hint">Change a client's webhook behaviour or its Redis status, then send it traffic.</p>
+          <div id="client-controls" class="client-controls"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="settings-title">
+          <h2 id="settings-title">Delivery settings</h2>
+          <p class="hint">Stored in Redis (<span class="mono">config:delivery</span>) and read live by the consumer and health checker.</p>
+          <form id="settings-form" class="settings"></form>
+        </section>
+      </aside>
+
+      <div class="content">
+        <section id="narration" class="panel narration" aria-live="polite"></section>
+
+        <section id="tiles" class="tiles" aria-label="Totals since the last reset"></section>
+
+        <section class="panel pipeline-panel" aria-labelledby="pipeline-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="pipeline-title">Pipeline</h2>
+              <p class="small secondary" id="pipeline-sub"></p>
+            </div>
+            <div class="flow-key" aria-label="Animation key">
+              <span data-packet="flow"><i></i>Message / webhook call</span>
+              <span data-packet="redis"><i></i>Redis read / write</span>
+              <span data-packet="good"><i></i>2xx / marked UP</span>
+              <span data-packet="warning"><i></i>429</span>
+              <span data-packet="critical"><i></i>Failure / marked DOWN</span>
+              <span data-packet="health"><i></i>Health check</span>
+            </div>
+          </div>
+          <div id="pipeline" class="pipeline">
+            <div class="pipe-head">
+              <div class="col-title">Payment gateway</div>
+              <div></div>
+              <div class="col-title">Kafka <span class="mono" id="topic-name"></span></div>
+              <div></div>
+              <div class="col-title">Consumer <span class="mono" id="group-name"></span></div>
+              <div></div>
+              <div class="col-title">Clients (webhooks)</div>
+            </div>
+            <div class="pipe-body">
+              <div class="node producer" data-anchor="producer">
+                <div class="node-title">Producer</div>
+                <div class="count" id="produced-count">0</div>
+                <div class="small secondary">transactions published</div>
+              </div>
+              <div id="lanes" class="lanes"></div>
+            </div>
+            <div class="infra">
+              <div class="node redis" data-anchor="redis">
+                <div class="node-title">Redis</div>
+                <dl id="redis-kv" class="kv"></dl>
+              </div>
+              <div class="node checker" data-anchor="checker">
+                <div class="node-title">Health checker</div>
+                <div class="small secondary">Consumer group <span class="mono">health-checkers</span></div>
+                <div id="monitors"></div>
+              </div>
+            </div>
+            <div id="packet-layer" class="packet-layer" aria-hidden="true"></div>
+          </div>
+        </section>
+
+        <div id="scope" class="scope panel" role="group" aria-label="Scope the chart, event log and transactions"></div>
+
+        <section class="panel" aria-labelledby="chart-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="chart-title">Webhook responses per second</h2>
+              <p class="small secondary" id="chart-sub">Last 60 s</p>
+            </div>
+            <button id="chart-view" class="btn small" type="button" aria-pressed="false">Show as table</button>
+          </div>
+          <div class="chart-wrap" id="chart-wrap">
+            <svg id="chart" class="chart-svg" role="img" aria-labelledby="chart-title chart-sub" tabindex="0"></svg>
+            <div id="chart-tooltip" class="tooltip" hidden></div>
+          </div>
+          <div id="chart-table" class="table-wrap" hidden></div>
+        </section>
+
+        <div class="grid-2 wide-left">
+          <section class="panel" aria-labelledby="log-title">
+            <div class="panel-head">
+              <h2 id="log-title">Event log</h2>
+              <span class="small secondary" id="log-count"></span>
+            </div>
+            <ol id="log" class="log" aria-live="off"></ol>
+          </section>
+
+          <section class="panel" aria-labelledby="txn-title">
+            <div class="panel-head">
+              <h2 id="txn-title">Transactions</h2>
+              <span class="small secondary">Latest 40, state from <span class="mono">txn:{id}</span></span>
+            </div>
+            <div class="table-wrap" id="txn-table"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
