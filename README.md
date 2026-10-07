@@ -1,4 +1,4 @@
-# Payment Notification Service Simulator
+# Payment Gateway Notification Service Simulator
 
 An end-to-end, dockerised simulation of how a payment gateway delivers transaction notifications
 (webhooks) to its merchants, and how it copes when a merchant is down, failing or rate limiting.
